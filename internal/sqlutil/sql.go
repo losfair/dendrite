@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/matrix-org/util"
 	"github.com/mattn/go-sqlite3"
@@ -79,9 +80,10 @@ func rawWithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 // If the code returns an error or panics then the transactions is rolledback
 // Otherwise the transaction is committed.
 func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 20; i++ {
 		if i != 0 {
 			log.Printf("mvsqlite commit conflict, retrying (attempt %d)", i)
+			time.Sleep(10 * time.Millisecond)
 		}
 
 		err = rawWithTransaction(db, fn)
