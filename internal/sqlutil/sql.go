@@ -16,10 +16,12 @@ package sqlutil
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"strings"
 	"time"
 
@@ -82,8 +84,13 @@ func rawWithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 	for i := 0; i < 20; i++ {
 		if i != 0 {
-			log.Printf("mvsqlite commit conflict, retrying (attempt %d)", i)
-			time.Sleep(10 * time.Millisecond)
+			delta, err := rand.Int(rand.Reader, big.NewInt(10))
+			if err != nil {
+				return err
+			}
+			millis := 10 + (delta.Int64() - 5)
+			log.Printf("mvsqlite commit conflict, retrying (attempt %d, sleeping %d milliseconds)", i, millis)
+			time.Sleep(time.Duration(millis) * time.Millisecond)
 		}
 
 		err = rawWithTransaction(db, fn)
