@@ -19,9 +19,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/matrix-org/util"
+	"github.com/mattn/go-sqlite3"
 )
 
 // ErrUserExists is returned if a username already exists in the database.
@@ -56,10 +58,7 @@ func EndTransactionWithCheck(txn Transaction, succeeded *bool, err *error) {
 	}
 }
 
-// WithTransaction runs a block of code passing in an SQL transaction
-// If the code returns an error or panics then the transactions is rolledback
-// Otherwise the transaction is committed.
-func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
+func rawWithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 	txn, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("sqlutil.WithTransaction.Begin: %w", err)
@@ -73,6 +72,26 @@ func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 	}
 
 	succeeded = true
+	return
+}
+
+// WithTransaction runs a block of code passing in an SQL transaction
+// If the code returns an error or panics then the transactions is rolledback
+// Otherwise the transaction is committed.
+func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
+	for i := 0; i < 10; i++ {
+		if i != 0 {
+			log.Printf("mvsqlite commit conflict, retrying (attempt %d)", i)
+		}
+
+		err = rawWithTransaction(db, fn)
+		if err != nil {
+			if err, ok := err.(sqlite3.Error); ok && err.Code == sqlite3.ErrBusy {
+				continue
+			}
+		}
+		break
+	}
 	return
 }
 
