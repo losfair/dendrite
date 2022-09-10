@@ -82,13 +82,13 @@ func rawWithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 // If the code returns an error or panics then the transactions is rolledback
 // Otherwise the transaction is committed.
 func WithTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
-	for i := 0; i < 20; i++ {
+	for i := int64(0); i < 50; i++ {
 		if i != 0 {
 			delta, err := rand.Int(rand.Reader, big.NewInt(10))
 			if err != nil {
 				return err
 			}
-			millis := 10 + (delta.Int64() - 5)
+			millis := 10*(i+1) + (delta.Int64() - 5)
 			log.Printf("mvsqlite commit conflict, retrying (attempt %d, sleeping %d milliseconds)", i, millis)
 			time.Sleep(time.Duration(millis) * time.Millisecond)
 		}
