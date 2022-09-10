@@ -62,6 +62,10 @@ func NewRoomUpdater(ctx context.Context, d *Database, txn *sql.Tx, roomInfo *typ
 	}, nil
 }
 
+func (u *RoomUpdater) Transaction() *sql.Tx {
+	return u.txn
+}
+
 // RoomExists returns true if the room exists and false otherwise.
 func (u *RoomUpdater) RoomExists() bool {
 	return u.roomExists

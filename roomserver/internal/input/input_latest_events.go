@@ -51,6 +51,7 @@ import (
 // Can only be called once at a time
 func (r *Inputer) updateLatestEvents(
 	ctx context.Context,
+	updater *shared.RoomUpdater,
 	roomInfo *types.RoomInfo,
 	stateAtEvent types.StateAtEvent,
 	event *gomatrixserverlib.Event,
@@ -63,12 +64,15 @@ func (r *Inputer) updateLatestEvents(
 	defer span.Finish()
 
 	var succeeded bool
-	updater, err := r.DB.GetRoomUpdater(ctx, roomInfo)
-	if err != nil {
-		return fmt.Errorf("r.DB.GetRoomUpdater: %w", err)
-	}
 
-	defer sqlutil.EndTransactionWithCheck(updater, &succeeded, &err)
+	if updater == nil {
+		updater, err = r.DB.GetRoomUpdater(ctx, roomInfo)
+		if err != nil {
+			return fmt.Errorf("r.DB.GetRoomUpdater: %w", err)
+		}
+
+		defer sqlutil.EndTransactionWithCheck(updater, &succeeded, &err)
+	}
 
 	u := latestEventsUpdater{
 		ctx:               ctx,

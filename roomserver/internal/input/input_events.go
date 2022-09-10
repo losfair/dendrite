@@ -30,6 +30,7 @@ import (
 	"github.com/matrix-org/dendrite/roomserver/api"
 	"github.com/matrix-org/dendrite/roomserver/internal/helpers"
 	"github.com/matrix-org/dendrite/roomserver/state"
+	"github.com/matrix-org/dendrite/roomserver/storage/shared"
 	"github.com/matrix-org/dendrite/roomserver/types"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/util"
@@ -66,6 +67,7 @@ var processRoomEventDuration = prometheus.NewHistogramVec(
 func (r *Inputer) processRoomEvent(
 	ctx context.Context,
 	input *api.InputRoomEvent,
+	updater *shared.RoomUpdater,
 ) error {
 	select {
 	case <-ctx.Done():
@@ -80,6 +82,8 @@ func (r *Inputer) processRoomEvent(
 	span.SetTag("room_id", input.Event.RoomID())
 	span.SetTag("event_id", input.Event.EventID())
 	defer span.Finish()
+
+	txn := updater.Transaction()
 
 	// Measure how long it takes to process this event.
 	started := time.Now()
@@ -110,7 +114,7 @@ func (r *Inputer) processRoomEvent(
 	// Don't waste time processing the event if the room doesn't exist.
 	// A room entry locally will only be created in response to a create
 	// event.
-	roomInfo, rerr := r.DB.RoomInfo(ctx, event.RoomID())
+	roomInfo, rerr := r.DB.RoomInfoTxn(ctx, txn, event.RoomID())
 	if rerr != nil {
 		return fmt.Errorf("r.DB.RoomInfo: %w", rerr)
 	}
@@ -125,7 +129,7 @@ func (r *Inputer) processRoomEvent(
 	// in case we have learned something new or need to weave the event into
 	// the DAG now.
 	if input.Kind == api.KindOutlier && roomInfo != nil {
-		wasRejected, werr := r.DB.IsEventRejected(ctx, roomInfo.RoomNID, event.EventID())
+		wasRejected, werr := r.DB.IsEventRejectedTxn(ctx, txn, roomInfo.RoomNID, event.EventID())
 		switch {
 		case werr == sql.ErrNoRows:
 			// We haven't seen this event before so continue.
@@ -145,7 +149,7 @@ func (r *Inputer) processRoomEvent(
 	var missingAuth, missingPrev bool
 	serverRes := &fedapi.QueryJoinedHostServerNamesInRoomResponse{}
 	if !isCreateEvent {
-		missingAuthIDs, missingPrevIDs, err := r.DB.MissingAuthPrevEvents(ctx, event)
+		missingAuthIDs, missingPrevIDs, err := r.DB.MissingAuthPrevEventsTxn(ctx, txn, event)
 		if err != nil {
 			return fmt.Errorf("updater.MissingAuthPrevEvents: %w", err)
 		}
@@ -313,7 +317,7 @@ func (r *Inputer) processRoomEvent(
 	}
 
 	// Store the event.
-	_, _, stateAtEvent, redactionEvent, redactedEventID, err := r.DB.StoreEvent(ctx, event, authEventNIDs, isRejected)
+	_, _, stateAtEvent, redactionEvent, redactedEventID, err := r.DB.StoreEventWithUpdater(ctx, updater, event, authEventNIDs, isRejected)
 	if err != nil {
 		return fmt.Errorf("updater.StoreEvent: %w", err)
 	}
@@ -336,7 +340,7 @@ func (r *Inputer) processRoomEvent(
 
 	// Request the room info again — it's possible that the room has been
 	// created by now if it didn't exist already.
-	roomInfo, err = r.DB.RoomInfo(ctx, event.RoomID())
+	roomInfo, err = r.DB.RoomInfoTxn(ctx, txn, event.RoomID())
 	if err != nil {
 		return fmt.Errorf("updater.RoomInfo: %w", err)
 	}
@@ -347,7 +351,7 @@ func (r *Inputer) processRoomEvent(
 	if input.HasState || (!missingPrev && stateAtEvent.BeforeStateSnapshotNID == 0) {
 		// We haven't calculated a state for this event yet.
 		// Lets calculate one.
-		err = r.calculateAndSetState(ctx, input, roomInfo, &stateAtEvent, event, isRejected)
+		err = r.calculateAndSetState(ctx, updater, input, roomInfo, &stateAtEvent, event, isRejected)
 		if err != nil {
 			return fmt.Errorf("r.calculateAndSetState: %w", err)
 		}
@@ -375,6 +379,7 @@ func (r *Inputer) processRoomEvent(
 	case api.KindNew:
 		if err = r.updateLatestEvents(
 			ctx,                 // context
+			updater,             // updater
 			roomInfo,            // room info for the room being updated
 			stateAtEvent,        // state at event (below)
 			event,               // event
@@ -646,6 +651,7 @@ nextAuthEvent:
 
 func (r *Inputer) calculateAndSetState(
 	ctx context.Context,
+	updater *shared.RoomUpdater,
 	input *api.InputRoomEvent,
 	roomInfo *types.RoomInfo,
 	stateAtEvent *types.StateAtEvent,
@@ -656,11 +662,16 @@ func (r *Inputer) calculateAndSetState(
 	defer span.Finish()
 
 	var succeeded bool
-	updater, err := r.DB.GetRoomUpdater(ctx, roomInfo)
-	if err != nil {
-		return fmt.Errorf("r.DB.GetRoomUpdater: %w", err)
+	var err error
+
+	if updater == nil {
+		updater, err = r.DB.GetRoomUpdater(ctx, roomInfo)
+		if err != nil {
+			return fmt.Errorf("r.DB.GetRoomUpdater: %w", err)
+		}
+		defer sqlutil.EndTransactionWithCheck(updater, &succeeded, &err)
 	}
-	defer sqlutil.EndTransactionWithCheck(updater, &succeeded, &err)
+
 	roomState := state.NewStateResolution(updater, roomInfo)
 
 	if input.HasState {

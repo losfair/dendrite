@@ -253,7 +253,7 @@ func (w *worker) _next() {
 	// a string, because we might want to return that to the caller if
 	// it was a synchronous request.
 	var errString string
-	if err = w.r.processRoomEvent(w.r.ProcessContext.Context(), &inputRoomEvent); err != nil {
+	if err = w.r.processRoomEvent(w.r.ProcessContext.Context(), &inputRoomEvent, nil); err != nil {
 		switch err.(type) {
 		case types.RejectedError:
 			// Don't send events that were rejected to Sentry

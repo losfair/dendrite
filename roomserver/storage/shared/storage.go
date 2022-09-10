@@ -155,6 +155,10 @@ func (d *Database) RoomInfo(ctx context.Context, roomID string) (*types.RoomInfo
 	return d.roomInfo(ctx, nil, roomID)
 }
 
+func (d *Database) RoomInfoTxn(ctx context.Context, txn *sql.Tx, roomID string) (*types.RoomInfo, error) {
+	return d.roomInfo(ctx, txn, roomID)
+}
+
 func (d *Database) roomInfo(ctx context.Context, txn *sql.Tx, roomID string) (*types.RoomInfo, error) {
 	roomInfo, err := d.RoomsTable.SelectRoomInfo(ctx, txn, roomID)
 	if err != nil {
@@ -268,6 +272,12 @@ func (d *Database) StateAtEventIDs(
 	ctx context.Context, eventIDs []string,
 ) ([]types.StateAtEvent, error) {
 	return d.EventsTable.BulkSelectStateAtEventByID(ctx, nil, eventIDs)
+}
+
+func (d *Database) StateAtEventIDsTxn(
+	ctx context.Context, txn *sql.Tx, eventIDs []string,
+) ([]types.StateAtEvent, error) {
+	return d.EventsTable.BulkSelectStateAtEventByID(ctx, txn, eventIDs)
 }
 
 func (d *Database) SnapshotNIDFromEventID(
@@ -571,11 +581,22 @@ func (d *Database) IsEventRejected(ctx context.Context, roomNID types.RoomNID, e
 	return d.EventsTable.SelectEventRejected(ctx, nil, roomNID, eventID)
 }
 
+func (d *Database) IsEventRejectedTxn(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID, eventID string) (bool, error) {
+	return d.EventsTable.SelectEventRejected(ctx, txn, roomNID, eventID)
+}
+
 func (d *Database) StoreEvent(
 	ctx context.Context, event *gomatrixserverlib.Event,
 	authEventNIDs []types.EventNID, isRejected bool,
 ) (types.EventNID, types.RoomNID, types.StateAtEvent, *gomatrixserverlib.Event, string, error) {
 	return d.storeEvent(ctx, nil, event, authEventNIDs, isRejected)
+}
+
+func (d *Database) StoreEventWithUpdater(
+	ctx context.Context, updater *RoomUpdater, event *gomatrixserverlib.Event,
+	authEventNIDs []types.EventNID, isRejected bool,
+) (types.EventNID, types.RoomNID, types.StateAtEvent, *gomatrixserverlib.Event, string, error) {
+	return d.storeEvent(ctx, updater, event, authEventNIDs, isRejected)
 }
 
 func (d *Database) storeEvent(
@@ -728,6 +749,12 @@ func (d *Database) GetPublishedRooms(ctx context.Context) ([]string, error) {
 func (d *Database) MissingAuthPrevEvents(
 	ctx context.Context, e *gomatrixserverlib.Event,
 ) (missingAuth, missingPrev []string, err error) {
+	return d.MissingAuthPrevEventsTxn(ctx, nil, e)
+}
+
+func (d *Database) MissingAuthPrevEventsTxn(
+	ctx context.Context, txn *sql.Tx, e *gomatrixserverlib.Event,
+) (missingAuth, missingPrev []string, err error) {
 	authEventNIDs, err := d.EventNIDs(ctx, e.AuthEventIDs())
 	if err != nil {
 		return nil, nil, fmt.Errorf("d.EventNIDs: %w", err)
@@ -739,7 +766,7 @@ func (d *Database) MissingAuthPrevEvents(
 	}
 
 	for _, prevEventID := range e.PrevEventIDs() {
-		state, err := d.StateAtEventIDs(ctx, []string{prevEventID})
+		state, err := d.StateAtEventIDsTxn(ctx, txn, []string{prevEventID})
 		if err != nil || len(state) == 0 || (!state[0].IsCreate() && state[0].BeforeStateSnapshotNID == 0) {
 			missingPrev = append(missingPrev, prevEventID)
 		}

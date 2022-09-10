@@ -16,6 +16,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/matrix-org/dendrite/roomserver/storage/shared"
 	"github.com/matrix-org/dendrite/roomserver/storage/tables"
@@ -28,6 +29,7 @@ type Database interface {
 	SupportsConcurrentRoomInputs() bool
 	// RoomInfo returns room information for the given room ID, or nil if there is no room.
 	RoomInfo(ctx context.Context, roomID string) (*types.RoomInfo, error)
+	RoomInfoTxn(ctx context.Context, txn *sql.Tx, roomID string) (*types.RoomInfo, error)
 	// Store the room state at an event in the database
 	AddState(
 		ctx context.Context,
@@ -40,11 +42,16 @@ type Database interface {
 		ctx context.Context, e *gomatrixserverlib.Event,
 	) (missingAuth, missingPrev []string, err error)
 
+	MissingAuthPrevEventsTxn(
+		ctx context.Context, txn *sql.Tx, e *gomatrixserverlib.Event,
+	) (missingAuth, missingPrev []string, err error)
+
 	// Look up the state of a room at each event for a list of string event IDs.
 	// Returns an error if there is an error talking to the database.
 	// The length of []types.StateAtEvent is guaranteed to equal the length of eventIDs if no error is returned.
 	// Returns a types.MissingEventError if the room state for the event IDs aren't in the database
 	StateAtEventIDs(ctx context.Context, eventIDs []string) ([]types.StateAtEvent, error)
+	StateAtEventIDsTxn(ctx context.Context, txn *sql.Tx, eventIDs []string) ([]types.StateAtEvent, error)
 	// Look up the numeric IDs for a list of string event types.
 	// Returns a map from string event type to numeric ID for the event type.
 	EventTypeNIDs(ctx context.Context, eventTypes []string) (map[string]types.EventTypeNID, error)
@@ -76,6 +83,10 @@ type Database interface {
 		ctx context.Context, event *gomatrixserverlib.Event, authEventNIDs []types.EventNID,
 		isRejected bool,
 	) (types.EventNID, types.RoomNID, types.StateAtEvent, *gomatrixserverlib.Event, string, error)
+	StoreEventWithUpdater(
+		ctx context.Context, updater *shared.RoomUpdater, event *gomatrixserverlib.Event, authEventNIDs []types.EventNID,
+		isRejected bool,
+	) (types.EventNID, types.RoomNID, types.StateAtEvent, *gomatrixserverlib.Event, string, error)
 	// Look up the state entries for a list of string event IDs
 	// Returns an error if the there is an error talking to the database
 	// Returns a types.MissingEventError if the event IDs aren't in the database.
@@ -96,6 +107,7 @@ type Database interface {
 	// If this returns an error then no further action is required.
 	// IsEventRejected returns true if the event is known and rejected.
 	IsEventRejected(ctx context.Context, roomNID types.RoomNID, eventID string) (rejected bool, err error)
+	IsEventRejectedTxn(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID, eventID string) (rejected bool, err error)
 	GetRoomUpdater(ctx context.Context, roomInfo *types.RoomInfo) (*shared.RoomUpdater, error)
 	// Look up event references for the latest events in the room and the current state snapshot.
 	// Returns the latest events, the current state and the maximum depth of the latest events plus 1.

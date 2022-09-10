@@ -105,7 +105,7 @@ func (t *missingStateReq) processEventWithMissingState(
 				Event:        newEvent.Headered(roomVersion),
 				Origin:       t.origin,
 				SendAsServer: api.DoNotSendToOtherServers,
-			})
+			}, nil)
 			if err != nil {
 				if _, ok := err.(types.RejectedError); !ok {
 					return nil, fmt.Errorf("t.inputer.processRoomEvent (filling gap): %w", err)
@@ -156,7 +156,7 @@ func (t *missingStateReq) processEventWithMissingState(
 			})
 		}
 		for _, ire := range outlierRoomEvents {
-			if err = t.inputer.processRoomEvent(ctx, &ire); err != nil {
+			if err = t.inputer.processRoomEvent(ctx, &ire, nil); err != nil {
 				if _, ok := err.(types.RejectedError); !ok {
 					return fmt.Errorf("t.inputer.processRoomEvent (outlier): %w", err)
 				}
@@ -186,7 +186,7 @@ func (t *missingStateReq) processEventWithMissingState(
 		HasState:      true,
 		StateEventIDs: stateIDs,
 		SendAsServer:  api.DoNotSendToOtherServers,
-	})
+	}, nil)
 	if err != nil {
 		if _, ok := err.(types.RejectedError); !ok {
 			return nil, fmt.Errorf("t.inputer.processRoomEvent (backward extremity): %w", err)
@@ -203,7 +203,7 @@ func (t *missingStateReq) processEventWithMissingState(
 			Event:        newEvent.Headered(roomVersion),
 			Origin:       t.origin,
 			SendAsServer: api.DoNotSendToOtherServers,
-		})
+		}, nil)
 		if err != nil {
 			if _, ok := err.(types.RejectedError); !ok {
 				return nil, fmt.Errorf("t.inputer.processRoomEvent (fast forward): %w", err)
