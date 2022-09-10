@@ -82,6 +82,10 @@ func (s *accountDataStatements) InsertAccountData(
 	ctx context.Context, txn *sql.Tx,
 	userID, roomID, dataType string,
 ) (pos types.StreamPosition, err error) {
+	if txn == nil {
+		panic("InsertAccountData requires a transaction")
+	}
+
 	pos, err = s.streamIDStatements.nextAccountDataID(ctx, txn)
 	if err != nil {
 		return
